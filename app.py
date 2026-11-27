@@ -55,10 +55,6 @@ def api_base_url(configured_url: str | None = None) -> str:
     return base_url
 
 
-def responses_endpoint() -> str:
-    return f"{api_base_url()}/responses"
-
-
 def openai_client(api_key: str) -> OpenAI:
     return OpenAI(api_key=api_key, base_url=api_base_url())
 
@@ -241,30 +237,18 @@ def delete_post(post_id: str) -> None:
 
 
 def call_json_model(api_key: str, system_prompt: str, user_prompt: str, model: str) -> dict:
-    response = requests.post(
-        responses_endpoint(),
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={
-            "model": model,
-            "instructions": system_prompt,
-            "input": user_prompt,
-            "text": {"format": {"type": "json_object"}},
-        },
-        timeout=120,
+    response = openai_client(api_key).chat.completions.create(
+        model=model,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
     )
-    response.raise_for_status()
-    payload = response.json()
-    output_text = payload.get("output_text", "")
-    if not output_text:
-        output_text = "".join(
-            content.get("text", "")
-            for item in payload.get("output", [])
-            for content in item.get("content", [])
-            if content.get("type") in {"output_text", "text"}
-        )
-    if not output_text:
+    content = response.choices[0].message.content
+    if not content:
         raise ValueError("模型响应中没有可读取的文本，请检查中转站返回内容。")
-    return json.loads(output_text)
+    return json.loads(content)
 
 
 def profile_context(profile: dict) -> str:
@@ -626,7 +610,7 @@ def main() -> None:
             "API 接口地址",
             value=st.session_state.api_base_url,
             key="api-base-url-input",
-            help="填写服务商 API 基础地址，例如 https://zwaca.cc/v1。也兼容以 /responses 结尾的完整地址。",
+            help="填写服务商 API 基础地址，例如 https://zwaca.cc/v1。文本生成使用标准 Chat Completions 接口。",
         ).strip()
         st.session_state.api_base_url = api_base_url
         api_model = st.text_input(
